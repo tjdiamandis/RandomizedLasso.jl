@@ -39,13 +39,13 @@ function LinearAlgebra.mul!(y, Anys::NystromApprox, x; cache=zeros(size(Anys.U, 
 end
 
 
-mutable struct RandomizedNystromPreconditioner{T <: Real}
+struct RandomizedNystromPreconditioner{T <: Real}
     A_nys::NystromApprox{T}
-    λ::T
-    μ::T
+    λ::SVector{1, T}
+    μ::SVector{1, T}
     cache::Vector{T}
     function RandomizedNystromPreconditioner(A_nys::NystromApprox{T}, μ::T) where {T <: Real}
-        return new{T}(A_nys, A_nys.Λ.diag[end], μ, zeros(size(A_nys.U, 2)))
+        return new{T}(A_nys, SA[A_nys.Λ.diag[end]], SA[μ], zeros(size(A_nys.U, 2)))
     end
 end
 
