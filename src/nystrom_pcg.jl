@@ -7,21 +7,35 @@ struct NystromApprox{T}
 end
 
 # Constructs Â_nys in factored form
-# Â_nys = (AΩ)(ΩᵀAΩ)^†(AΩ)^ᵀ = UΛ̂Uᵀ
-# [Frangella et al., Algorithm 2.1]
-function NystromApprox(A::Matrix{T}, r::Int) where {T <: Real}
-    !issymmetric(A) && !isposdef(A + 1e-12I) && error(ArgumentError("A must be PSD"))
-
+# Â_nys = (AΩ)(ΩᵀAΩ)^†(AΩ)^ᵀ = UΛUᵀ
+# [Martinsson & Tropp, Algorithm 16]
+function NystromApprox(A::Matrix{T}, k::Int, r::Int; check=false) where {T <: Real}
     n = size(A, 1)
+    if check
+        #TODO: reevaluate this tolerance chocie
+        psd_tol = sqrt(n)*eps(norm(A))
+        !isposdef(A + psd_tol*I) && error(ArgumentError("A must be PSD"))
+    end
+
     Ω = randn(n, r)
     Ω .= Array(qr(Ω).Q)
     Y = A * Ω
-    ν = eps(norm(Y))
+    ν = sqrt(n)*eps(norm(Y))
     @. Y += ν * Ω
     B = Y / cholesky(Symmetric(Ω' * Y)).U
     U, Σ, _ = svd(B)
-    Λ = Diagonal(max.(0, Σ.^2 .- ν))
-    return NystromApprox(U, Λ)
+    Λ = Diagonal(max.(0, Σ.^2 .- ν)[1:k])
+
+    return NystromApprox(U[:, 1:k], Λ)
+end
+
+LinearAlgebra.eigvals(Anys::NystromApprox) = Anys.Λ.diag
+function LinearAlgebra.mul!(y, Anys::NystromApprox, x; cache=zeros(size(Anys.U, 2)))
+    length(y) != length(x) || length(y) != size(Anys.U, 1) && error(DimensionMismatch())
+    mul!(cache, Anys.U', x)
+    cache .= Anys.Λ .* cache
+    mul!(y, Anys.U, cache)
+    return nothing
 end
 
 
