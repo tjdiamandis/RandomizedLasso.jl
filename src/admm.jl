@@ -22,7 +22,7 @@ struct LassoADMMProblem{T}
     uk::AbstractVector{T}       # dual var (ADMM)
     ρ::MVector{1,T}
     α::MVector{1,T}
-    function LassoADMMProblem(A::AbstractMatrix{T}, b::AbstractVector{T}, λ::T; ρ=1e-6, α=1.5) where {T <: Real}
+    function LassoADMMProblem(A::AbstractMatrix{T}, b::AbstractVector{T}, λ::T; ρ=1.0, α=1.5) where {T <: Real}
         n = size(A, 2)
         data = LassoADMMProblemData(A, b)
         return new{T}(
@@ -76,14 +76,14 @@ function update_x!(prob::LassoADMMProblem{T}, solver::S, P) where {T <: Real, S 
 end
 
 function soft_threshold(x::T, y::T, κ::T) where {T <: Real}
-    return max(0, x + y - κ) - max(0, -x - y - κ)
+    return max(zero(T), x + y - κ) - max(zero(T), -x - y - κ)
 end
 
 function update_z!(prob::LassoADMMProblem{T}; relax=true, xhat=nothing) where {T <: Real}
     if relax
-        prob.zk .= soft_threshold!.(xhat, prob.uk, prob.λ[1] / prob.ρ[1])
+        prob.zk .= soft_threshold.(xhat, prob.uk, prob.λ[1] / prob.ρ[1])
     else    
-        prob.zk .= soft_threshold!.(prob.xk, prob.uk, prob.λ[1] / prob.ρ[1])
+        prob.zk .= soft_threshold.(prob.xk, prob.uk, prob.λ[1] / prob.ρ[1])
     end
 end
 
@@ -98,7 +98,9 @@ end
 # updated_obj = true if 
 #   1) prob.sq_error has been updated
 #   2) cache.v has been updated
-function dual_gap(prob::LassoADMMProblem{T}, cache; updated_obj=false) where {T}
+function dual_gap!(prob::LassoADMMProblem{T}, cache; updated_obj=false) where {T}
+    #TODO: benchmark norm(x, Inf) vs maximum(x)
+    #TODO: benchmark norm(x, 1) vs sum(x->abs(x), x)
     x = prob.zk
     v = cache.v
     if !updated_obj
@@ -115,21 +117,19 @@ function dual_gap(prob::LassoADMMProblem{T}, cache; updated_obj=false) where {T}
         prob.obj_val[1] = prob.sq_error[1] + prob.λ[1] * norm(x, 1)
     end
 
-    prob.dual_gap[1] = prob.λ[1]^2/z^2*prob.sq_error[1] + prob.obj_val[1] + 1/z * (uTx - w)
+    prob.dual_gap[1] = prob.λ[1]^2/z^2*prob.sq_error[1] + prob.obj_val[1] + prob.λ[1]/z * (uTx - w)
 
     return prob.dual_gap[1]
 end
 
-function sq_error(prob::LassoADMMProblem{T}, cache) where {T}
+function sq_error!(prob::LassoADMMProblem{T}, cache) where {T}
     x = prob.zk
     v = cache.v
     mul!(v, prob.data.ATA, x)
 
-    u = prob.data.ATb
-    uTx = dot(u, x)
-    w = prob.data.bTb
+    uTx = dot(prob.data.ATb, x) 
 
-    prob.sq_error[1] = 0.5*(dot(x, v) - 2uTx + w)
+    prob.sq_error[1] = 0.5*(dot(x, v) - 2uTx + prob.data.bTb)
     prob.obj_val[1] = prob.sq_error[1] + prob.λ[1] * norm(x, 1)
     return prob.sq_error[1]
 end
@@ -151,7 +151,7 @@ function solve!(
     # --- parameters ---
     n = size(prob.data.ATA, 1)
     t = 1
-    η = Inf
+    prob.dual_gap[1] = Inf
     r0 = n ÷ 100
 
     # --- enable multithreaded BLAS ---
@@ -212,7 +212,7 @@ function solve!(
     # --------------------- ITERATIONS -----------------------------------------
     # --------------------------------------------------------------------------
     solve_time_start = time_ns()
-    while t <= max_iters && η > tol
+    while t <= max_iters && prob.dual_gap[1] > tol
 
         # --- Update Iterates ---
         update_x!(prob, solver, P)
@@ -223,14 +223,14 @@ function solve!(
         update_u!(prob; relax=relax, xhat=xhat)
 
         # --- Eval Termination Criterion
-        obj_val = sq_error(prob, cache) + prob.λ[1] .* norm(prob.zk, 1)
-        η = dual_gap(prob, cache; updated_obj=true)
+        sq_error!(prob, cache)
+        dual_gap!(prob, cache; updated_obj=true)
 
         # --- Logging ---
         time_sec = (time_ns() - solve_time_start) / 1e9
         if logging
-            dual_gap_log[t] = η
-            obj_val_log[t] = obj_val
+            dual_gap_log[t] = prob.dual_gap
+            obj_val_log[t] = prob.obj_val
             iter_time_log[t] = time_sec
         end
         
@@ -249,7 +249,7 @@ function solve!(
     end
 
     solve_time = (time_ns() - solve_time_start) / 1e9
-    @printf("\nSolved in %6.3fs\n", solve_time)
+    @printf("\nSolved in %6.3fs, %d iterations\n", solve_time, t-1)
     print_footer()
 
 
