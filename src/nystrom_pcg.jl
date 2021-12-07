@@ -42,7 +42,7 @@ function LinearAlgebra.:*(Anys::NystromApprox, x::AbstractVector)
 end
 
 # Doubles rank until the approximation is sufficiently good
-function adaptive_nystrom_approx(A::Matrix{T}, r0::Int, μ; C=100, check=false) where {T <: Real}
+function adaptive_nystrom_approx(A::Matrix{T}, r0::Int; tol=1e-6, check=false) where {T <: Real}
     check && check_psd(A)
     n = size(A, 1)
     cache = (
@@ -53,10 +53,10 @@ function adaptive_nystrom_approx(A::Matrix{T}, r0::Int, μ; C=100, check=false) 
     r = r0
     Enorm = Inf
     Anys = nothing
-    while Enorm > μ * C
+    while Enorm > tol * n^2 && r < n
         k = Int(round(.9*r))
         Anys = NystromApprox(A, k, r; check=false)
-        Enorm = estimate_norm_E(A, Anys; cache=cache)
+        Enorm = estimate_norm_E(A, Anys; q=10, cache=cache)
         r = 2r
     end
     return Anys
@@ -103,8 +103,8 @@ end
 
 struct RandomizedNystromPreconditioner{T <: Real}
     A_nys::NystromApprox{T}
-    λ::SVector{1, T}
-    μ::SVector{1, T}
+    λ::MVector{1, T}
+    μ::MVector{1, T}
     cache::Vector{T}
     function RandomizedNystromPreconditioner(A_nys::NystromApprox{T}, μ::T) where {T <: Real}
         return new{T}(A_nys, SA[A_nys.Λ.diag[end]], SA[μ], zeros(size(A_nys.U, 2)))
@@ -144,8 +144,8 @@ end
 # Used for Krylov method
 struct RandomizedNystromPreconditionerInverse{T <: Real}
     A_nys::NystromApprox{T}
-    λ::SVector{1, T}
-    μ::SVector{1, T}
+    λ::MVector{1, T}
+    μ::MVector{1, T}
     cache::Vector{T}
     function RandomizedNystromPreconditionerInverse(A_nys::NystromApprox{T}, μ::T) where {T <: Real}
         return new{T}(A_nys, SA[A_nys.Λ.diag[end]], SA[μ], zeros(size(A_nys.U, 2)))
