@@ -63,45 +63,6 @@ function adaptive_nystrom_approx(A::Matrix{T}, r0::Int, μ; C=100, check=false) 
 end
 
 
-struct RandomizedNystromPreconditioner{T <: Real}
-    A_nys::NystromApprox{T}
-    λ::SVector{1, T}
-    μ::SVector{1, T}
-    cache::Vector{T}
-    function RandomizedNystromPreconditioner(A_nys::NystromApprox{T}, μ::T) where {T <: Real}
-        return new{T}(A_nys, SA[A_nys.Λ.diag[end]], SA[μ], zeros(size(A_nys.U, 2)))
-    end
-end
-
-function LinearAlgebra.:\(P::RandomizedNystromPreconditioner{T}, x::Vector{T}) where {T <: Real} 
-    λ = P.λ[1]
-    μ = P.μ[1]
-    # P⁻x = x - U*((λ + μ)*(Λ + μI)^-1 + I)*Uᵀ*x
-    mul!(P.A_nys.cache, P.A_nys.U', x)
-    @. P.A_nys.cache *= (P.λ + P.μ) * 1 / (Λ.diag + μ) + 1
-    return x - U*P.A_nys.cache
-end
-
-function LinearAlgebra.ldiv!(y::Vector{T}, P::RandomizedNystromPreconditioner{T}, x::Vector{T}) where {T <: Real}
-    λ = P.λ[1]
-    μ = P.μ[1]
-    length(y) != length(x) && error(DimensionMismatch())
-    mul!(P.cache, P.A_nys.U', x)
-    @. P.cache *= (P.λ + P.μ) * 1 / (P.A_nys.Λ.diag + P.μ) + 1
-    mul!(y, P.A_nys.U, P.cache)
-    @. y = x - y
-    return nothing
-end
-
-function LinearAlgebra.ldiv!(P::RandomizedNystromPreconditioner{T}, x::Vector{T}) where {T <: Real} 
-    λ = P.λ[1]
-    μ = P.μ[1]
-    mul!(P.cache, P.A_nys.U', x)
-    @. P.cache *= (P.λ + P.μ) * 1 / (P.A_nys.Λ.diag + P.μ) + 1
-    x .-= P.A_nys.U*P.cache
-    return nothing
-end
-
 # By prop 5.3, have that κ(P^{-1/2} * A * P^{-1/2}) ≤ (λᵣ + μ + ||E||)/μ
 function estimate_norm_E(A, Anys; q=10, cache=nothing)
     n = size(A, 1)
@@ -137,4 +98,69 @@ function check_psd(A)
     n = size(A, 1)
     psd_tol = sqrt(n)*eps(norm(A))
     !isposdef(A + psd_tol*I) && error(ArgumentError("A must be PSD"))
+end
+
+
+struct RandomizedNystromPreconditioner{T <: Real}
+    A_nys::NystromApprox{T}
+    λ::SVector{1, T}
+    μ::SVector{1, T}
+    cache::Vector{T}
+    function RandomizedNystromPreconditioner(A_nys::NystromApprox{T}, μ::T) where {T <: Real}
+        return new{T}(A_nys, SA[A_nys.Λ.diag[end]], SA[μ], zeros(size(A_nys.U, 2)))
+    end
+end
+Base.eltype(P::RandomizedNystromPreconditioner{T}) where {T} = T
+
+function LinearAlgebra.:\(P::RandomizedNystromPreconditioner{T}, x::Vector{T}) where {T <: Real} 
+    λ = P.λ[1]
+    μ = P.μ[1]
+    # P⁻x = x - U*((λ + μ)*(Λ + μI)^-1 + I)*Uᵀ*x
+    mul!(P.A_nys.cache, P.A_nys.U', x)
+    @. P.A_nys.cache *= (P.λ + P.μ) * 1 / (Λ.diag + μ) + 1
+    return x - U*P.A_nys.cache
+end
+
+function LinearAlgebra.ldiv!(y::Vector{T}, P::RandomizedNystromPreconditioner{T}, x::Vector{T}) where {T <: Real}
+    λ = P.λ[1]
+    μ = P.μ[1]
+    length(y) != length(x) && error(DimensionMismatch())
+    mul!(P.cache, P.A_nys.U', x)
+    @. P.cache *= (P.λ + P.μ) * 1 / (P.A_nys.Λ.diag + P.μ) - 1
+    mul!(y, P.A_nys.U, P.cache)
+    @. y = x + y
+    return nothing
+end
+
+function LinearAlgebra.ldiv!(P::RandomizedNystromPreconditioner{T}, x::Vector{T}) where {T <: Real} 
+    λ = P.λ[1]
+    μ = P.μ[1]
+    mul!(P.cache, P.A_nys.U', x)
+    @. P.cache *= (P.λ + P.μ) * 1 / (P.A_nys.Λ.diag + P.μ) + 1
+    x .-= P.A_nys.U*P.cache
+    return nothing
+end
+
+# Used for Krylov method
+struct RandomizedNystromPreconditionerInverse{T <: Real}
+    A_nys::NystromApprox{T}
+    λ::SVector{1, T}
+    μ::SVector{1, T}
+    cache::Vector{T}
+    function RandomizedNystromPreconditionerInverse(A_nys::NystromApprox{T}, μ::T) where {T <: Real}
+        return new{T}(A_nys, SA[A_nys.Λ.diag[end]], SA[μ], zeros(size(A_nys.U, 2)))
+    end
+end
+Base.eltype(P::RandomizedNystromPreconditionerInverse{T}) where {T} = T
+
+function LinearAlgebra.mul!(y, P::RandomizedNystromPreconditionerInverse, x)
+    length(y) != length(x) && error(DimensionMismatch())
+    
+    λ = P.λ[1]
+    μ = P.μ[1]
+    
+    mul!(P.cache, P.A_nys.U', x)
+    @. P.cache *= (P.λ + P.μ) / (P.A_nys.Λ.diag + P.μ) - 1
+    mul!(y, P.A_nys.U, P.cache)
+    @. y = x + y
 end
