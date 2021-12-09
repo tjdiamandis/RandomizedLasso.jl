@@ -3,7 +3,7 @@
 [![Build Status](https://github.com/tjdiamandis/RandomizedLasso.jl/actions/workflows/CI.yml/badge.svg?branch=main)](https://github.com/tjdiamandis/RandomizedLasso.jl/actions/workflows/CI.yml?query=branch%3Amain)
 [![Coverage](https://codecov.io/gh/tjdiamandis/RandomizedLasso.jl/branch/main/graph/badge.svg)](https://codecov.io/gh/tjdiamandis/RandomizedLasso.jl)
 
-An L1 regression solver using ADMM and [Randomized Nystrom Preconditioning](https://arxiv.org/pdf/2110.02820).
+An L1 regression solver using [ADMM](https://stanford.edu/~boyd/admm.html) and [Randomized Nystrom Preconditioning](https://arxiv.org/pdf/2110.02820).
 
 **Currently a work-in-progress**
 
@@ -73,8 +73,8 @@ end
 [2] Zachary Frangella, Joel A Tropp, and Madeleine Udell. “Randomized Nyström Precon-ditioning.” In:arXiv preprint arXiv:2110.02820(2021).
 
 ## TODOs
-[ ] Performance improvements
-[ ] Smarter scaling of problem data
-[ ] Function for regularization path
-[ ] Better parallelization
-[ ] Tests
+- [ ] Performance improvements
+- [ ] Smarter scaling of problem data
+- [ ] Function for regularization path
+- [ ] Better parallelization
+- [ ] Tests
