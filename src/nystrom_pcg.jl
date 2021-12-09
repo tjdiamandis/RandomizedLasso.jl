@@ -42,7 +42,7 @@ function LinearAlgebra.:*(Anys::NystromApprox, x::AbstractVector)
 end
 
 # Doubles rank until the approximation is sufficiently good
-function adaptive_nystrom_approx(A::Matrix{T}, r0::Int; tol=1e-6, check=false) where {T <: Real}
+function adaptive_nystrom_approx(A::Matrix{T}, r0::Int; tol=1e-6, check=false, q=10) where {T <: Real}
     check && check_psd(A)
     n = size(A, 1)
     cache = (
@@ -56,7 +56,7 @@ function adaptive_nystrom_approx(A::Matrix{T}, r0::Int; tol=1e-6, check=false) w
     while Enorm > tol * n^2 && r < n
         k = Int(round(.9*r))
         Anys = NystromApprox(A, k, r; check=false)
-        Enorm = estimate_norm_E(A, Anys; q=10, cache=cache)
+        Enorm = estimate_norm_E(A, Anys; q=q, cache=cache)
         r = 2r
     end
     return Anys
