@@ -257,6 +257,7 @@ function solve!(
     # --------------------- ITERATIONS -----------------------------------------
     # --------------------------------------------------------------------------
     solve_time_start = time_ns()
+    #TODO: relative error for stopping criterion?? η/G(ν) ≤ ϵ
     while t <= max_iters && prob.dual_gap[1] > tol
 
         # --- Update Iterates ---

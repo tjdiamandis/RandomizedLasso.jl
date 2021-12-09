@@ -6,8 +6,9 @@ const RL = RandomizedLasso
 
 ## Example with random data
 n, r = 1000, 500
+μ = 1e-3
 A = randn(n, r)
-A = A*A'
+A = A*A' + μ*I
 λA = sort(eigvals(A), by=x->-x)
 plt_eigvals = plot(
     λA,
@@ -17,7 +18,7 @@ plt_eigvals = plot(
     legend=false
 )
 savefig(plt_eigvals, joinpath(@__DIR__, "figs/eigvals.pdf"))
-deff_A = RL.deff(A, 1e-2)
+deff_A = RL.deff(A, μ)
 
 rs = 10:10:1000
 ks = Int.(round.(0.9 .* rs .- 1))
@@ -37,8 +38,8 @@ for (r, k) in zip(rs, ks)
     r % 100 == 0 && @info "Finished with r = $r"
 end
 
-plt_sketch_error = plot(ks[1:60], 
-    [errors[1:60], bound[1:60]], 
+plt_sketch_error = plot(ks[1:70], 
+    [errors[1:70], bound[1:70]], 
     yaxis=:log,
     dpi=300,
     lw=3,
