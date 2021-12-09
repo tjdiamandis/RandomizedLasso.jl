@@ -4,14 +4,18 @@ struct LassoADMMProblemData{T}
     ATA::AbstractMatrix{T}          # n x n matrix
     ATb::AbstractVector{T}          # n vector
     bTb::T                          # scalar
+    m::Int
+    n::Int
     function LassoADMMProblemData(A::AbstractMatrix{T}, b::AbstractVector{T}) where {T <: Real}
-        return new{T}(A'*A, A'*b, sum(x->x^2, b))
+        m, n = size(A)
+        m != length(b) && error(DimensionMismatch("Invalid dimensions for A or b"))
+        return new{T}(1/m * (A'*A), 1/m * (A'*b), 1/m * sum(x->x^2, b), m, n)
     end
 end
 
+#TODO: group metrics and params into vectors
 struct LassoADMMProblem{T}
     data::LassoADMMProblemData{T}
-    λ::MVector{1,T}
     Ax::AbstractMatrix{T}       # matrix in x update
     bx::AbstractVector{T}       # vector in x update
     obj_val::MVector{1,T}       # objective (uses zk)
@@ -20,6 +24,7 @@ struct LassoADMMProblem{T}
     xk::AbstractVector{T}       # primal var
     zk::AbstractVector{T}       # primal var
     uk::AbstractVector{T}       # dual var (ADMM)
+    λ::MVector{1,T}
     ρ::MVector{1,T}
     α::MVector{1,T}
     function LassoADMMProblem(A::AbstractMatrix{T}, b::AbstractVector{T}, λ::T; ρ=1.0, α=1.5) where {T <: Real}
@@ -27,27 +32,44 @@ struct LassoADMMProblem{T}
         data = LassoADMMProblemData(A, b)
         return new{T}(
             data,
-            SA[λ],
             similar(data.ATA),
             similar(data.ATb),
             SA[zero(T)],
             SA[zero(T)],
             SA[zero(T)],
-            zeros(n),
-            zeros(n),
-            zeros(n),
+            zeros(T, n),
+            zeros(T, n),
+            zeros(T, n),
+            SA[λ],
             SA[ρ],
             SA[α]
         )
     end
 end
 #λmax = maximum(ATb) => x⋆ = 0
+function reset!(prob::LassoADMMProblem{T}) where {T}
+    n = length(prob.xk)
+    prob.obj_val[1] = zero(T)
+    prob.sq_error[1] = zero(T)
+    prob.dual_gap[1] = zero(T)
+    prob.xk .= zeros(T, n)
+    prob.zk .= zeros(T, n)
+    prob.uk .= zeros(T, n)
+    return nothing
+end
+
+function update_λ!(prob::LassoADMMProblem{T}, λ::T) where {T}
+    prob.λ[1] = λ
+    return nothing
+end
 
 
 struct LassoADMMLog{T <: AbstractFloat}
     dual_gap::Union{AbstractVector{T}, Nothing}
     obj_val::Union{AbstractVector{T}, Nothing}
     iter_time::Union{AbstractVector{T}, Nothing}
+    rp::Union{AbstractVector{T}, Nothing}
+    rd::Union{AbstractVector{T}, Nothing}
     setup_time::T
     precond_time::T
     solve_time::T
@@ -64,7 +86,7 @@ end
 
 # --- substeps ---
 # P is a preconditioner
-function update_x!(prob::LassoADMMProblem{T}, solver::S, P) where {T <: Real, S <: KrylovSolver}
+function update_x!(prob::LassoADMMProblem{T}, solver::S, P) where {T <: Real, S <: CgSolver}
     # TODO: perhaps should decrease the ϵ here?
     # TODO: If A is fat, want to use matrix inversion lemma:
     #   (I + ρAᵀA)⁻¹ = I - ρAᵀ(I + ρAAᵀ)⁻¹A
@@ -134,6 +156,19 @@ function sq_error!(prob::LassoADMMProblem{T}, cache) where {T}
     return prob.sq_error[1]
 end
 
+function update_rho!(prob::LassoADMMProblem, rp, rd, μ, τ_inc, τ_dec)
+    if rp > μ * rd
+        prob.ρ[1] = τ_inc * prob.ρ
+        prob.Ax[diagind(prob.Ax)] .= prob.data.ATA[diagind(prob.data.ATA)] .+ prob.ρ[1]
+        return prob.ρ[1]
+    elseif rd > μ * rp
+        prob.ρ[1] = prob.ρ / τ_dec
+        prob.Ax[diagind(prob.Ax)] .= prob.data.ATA[diagind(prob.data.ATA)] .+ prob.ρ[1]
+        return prob.ρ[1]
+    else
+        return prob.ρ[1]
+    end
+end
 
 # --- main solver ---
 function solve!(
@@ -149,10 +184,14 @@ function solve!(
     @printf("Starting setup...")
 
     # --- parameters ---
-    n = size(prob.data.ATA, 1)
+    n = prob.data.n
+    m = prob.data.m
     t = 1
     prob.dual_gap[1] = Inf
-    r0 = n ÷ 100
+    r0 = 110
+    μ = 10
+    τ_inc = 2
+    τ_dec = 2
 
     # --- enable multithreaded BLAS ---
     n_threads = Sys.CPU_THREADS
@@ -175,15 +214,17 @@ function solve!(
     )
     prob.Ax .= prob.data.ATA
     prob.Ax[diagind(prob.Ax)] .+= ρ
+    uk_old = similar(prob.uk)
 
     # --- Precondition ---
     if precondition
         @printf("\n\tPreconditioning...")
         precond_time_start = time_ns()
-        ATA_nys = adaptive_nystrom_approx(prob.data.ATA, r0)
+        ATA_nys = adaptive_nystrom_approx(prob.data.ATA, r0; q=10, tol=1e-7*n^2)
         P = RandomizedNystromPreconditionerInverse(ATA_nys, ρ)
         precond_time = (time_ns() - precond_time_start) / 1e9
-        @printf("\n\tPreconditioned in %6.3fs", precond_time)
+        r = length(ATA_nys.Λ.diag)
+        @printf("\n\tPreconditioned (rank %d) in %6.3fs", r, precond_time)
     else
         P = I
         precond_time = 0.0
@@ -194,17 +235,21 @@ function solve!(
         dual_gap_log = zeros(max_iters)
         obj_val_log = zeros(max_iters)
         iter_time_log = zeros(max_iters)
+        rp_log = zeros(max_iters)
+        rd_log = zeros(max_iters)
     else
         dual_gap_log = nothing
         obj_val_log = nothing
         iter_time_log = nothing
+        rp_log = nothing
+        rd_log = nothing
     end
 
     setup_time = (time_ns() - setup_time_start) / 1e9
     @printf("\nSetup in %6.3fs\n", setup_time)
 
     # --- Print Headers ---
-    headers = ["Iteration", "Objective", "RMSE", "Dual Gap", "Time"]
+    headers = ["Iteration", "Objective", "RMSE", "Dual Gap", "ρ", "Time"]
     print_header(headers)
 
 
@@ -220,7 +265,13 @@ function solve!(
             @. xhat = α * prob.xk + (1-α) * prob.zk
         end
         update_z!(prob; relax=relax, xhat=xhat)
+        uk_old .= prob.uk
         update_u!(prob; relax=relax, xhat=xhat)
+
+        # Update ρ
+        rp = norm(prob.xk - prob.zk)
+        rd = norm(ρ*(prob.uk - uk_old))
+        ρ = update_rho!(prob, rp, rd, μ, τ_inc, τ_dec)
 
         # --- Eval Termination Criterion
         sq_error!(prob, cache)
@@ -232,6 +283,8 @@ function solve!(
             dual_gap_log[t] = prob.dual_gap
             obj_val_log[t] = prob.obj_val
             iter_time_log[t] = time_sec
+            rp_log[t] = rp
+            rd_log[t] = rd
         end
         
         # --- Printing ---
@@ -239,8 +292,9 @@ function solve!(
             print_iter_func((
                 string(t),
                 prob.obj_val[1],
-                prob.sq_error[1],
+                sqrt(2*prob.sq_error[1]/m),
                 prob.dual_gap[1],
+                prob.ρ[1],
                 time_sec
             ))
         end
@@ -248,14 +302,27 @@ function solve!(
         t += 1
     end
 
+    # print final iteration if havent done so
+    if (t-1) % print_iter != 0 && (t-1) != 1
+        print_iter_func((
+            string(t-1),
+            prob.obj_val[1],
+            sqrt(2*prob.sq_error[1]/m),
+            prob.dual_gap[1],
+            prob.ρ[1],
+            (time_ns() - solve_time_start) / 1e9
+        ))
+    end
     solve_time = (time_ns() - solve_time_start) / 1e9
     @printf("\nSolved in %6.3fs, %d iterations\n", solve_time, t-1)
+    @printf("Total time: %6.3fs\n", setup_time + solve_time)
     print_footer()
 
 
     # --- Construct Logs ---
     log = LassoADMMLog(
         dual_gap_log, obj_val_log, iter_time_log,
+        rp_log, rd_log,
         setup_time, precond_time, solve_time
     )
 
