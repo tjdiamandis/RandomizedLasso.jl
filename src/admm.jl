@@ -280,8 +280,8 @@ function solve!(
         # --- Logging ---
         time_sec = (time_ns() - solve_time_start) / 1e9
         if logging
-            dual_gap_log[t] = prob.dual_gap
-            obj_val_log[t] = prob.obj_val
+            dual_gap_log[t] = prob.dual_gap[1]
+            obj_val_log[t] = prob.obj_val[1]
             iter_time_log[t] = time_sec
             rp_log[t] = rp
             rd_log[t] = rd
@@ -321,8 +321,8 @@ function solve!(
 
     # --- Construct Logs ---
     log = LassoADMMLog(
-        dual_gap_log, obj_val_log, iter_time_log,
-        rp_log, rd_log,
+        dual_gap_log[1:t-1], obj_val_log[1:t-1], iter_time_log[1:t-1],
+        rp_log[1:t-1], rd_log[1:t-1],
         setup_time, precond_time, solve_time
     )
 
