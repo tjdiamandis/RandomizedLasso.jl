@@ -53,7 +53,7 @@ function adaptive_nystrom_approx(A::Matrix{T}, r0::Int; tol=1e-6, check=false, q
     r = r0
     Enorm = Inf
     Anys = nothing
-    while Enorm > tol * n^2 && r < n
+    while Enorm > tol && r < n
         k = Int(round(.9*r))
         Anys = NystromApprox(A, k, r; check=false)
         Enorm = estimate_norm_E(A, Anys; q=q, cache=cache)
