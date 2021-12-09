@@ -25,7 +25,7 @@ result = solve!(prob)
 ```
 There are several optional keyword arguments:
 - `relax::Bool=true`
-    - Toggles the use of relaxation (see CITE)
+    - Toggles the use of relaxation (see [1, §3.4.3])
 - `logging::Bool=false`
     - If true, logs the objective value, duality gap, RMSE, and primal & dual residuals at each iteration.
 - `precondition::Bool=true`
@@ -68,9 +68,13 @@ end
 
 
 ## References
-TODO
+[1] Stephen Boyd et al. Distributed optimization and statistical learn-ing via the alternating direction method of multipliers. Now Publishers Inc, 2011
+
+[2] Zachary Frangella, Joel A Tropp, and Madeleine Udell. “Randomized Nyström Precon-ditioning.” In:arXiv preprint arXiv:2110.02820(2021).
 
 ## TODOs
+[ ] Performance improvements
 [ ] Smarter scaling of problem data
 [ ] Function for regularization path
 [ ] Better parallelization
+[ ] Tests
