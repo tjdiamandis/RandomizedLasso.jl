@@ -3,9 +3,18 @@
 [![Build Status](https://github.com/tjdiamandis/RandomizedLasso.jl/actions/workflows/CI.yml/badge.svg?branch=main)](https://github.com/tjdiamandis/RandomizedLasso.jl/actions/workflows/CI.yml?query=branch%3Amain)
 [![Coverage](https://codecov.io/gh/tjdiamandis/RandomizedLasso.jl/branch/main/graph/badge.svg)](https://codecov.io/gh/tjdiamandis/RandomizedLasso.jl)
 
-An L1 regression solver using [ADMM](https://stanford.edu/~boyd/admm.html) and [Randomized Nystrom Preconditioning](https://arxiv.org/pdf/2110.02820).
 
-**Currently a work-in-progress**
+-----------------------
+-----------------------
+-----------------------
+## Important Notice
+**This repo is not maintained. See [RandomizedPreconditioners.jl](https://github.com/tjdiamandis/RandomizedPreconditioners.jl) for the randomized Nyström preconditioner.**
+
+-----------------------
+-----------------------
+-----------------------
+
+An L1 regression solver using [ADMM](https://stanford.edu/~boyd/admm.html) and [Randomized Nystrom Preconditioning](https://arxiv.org/pdf/2110.02820).
 
 ## Use
 This package solves L1 regression problems of the form
